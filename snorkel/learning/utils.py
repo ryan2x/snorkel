@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.sparse as sparse
 import warnings
+from itertools import product
 
 from pandas import DataFrame
+import tensorflow as tf
 
 matplotlib.use('Agg')
 warnings.filterwarnings("ignore", module="matplotlib")
@@ -422,7 +424,7 @@ class GridSearch(object):
         self.scorer             = scorer
         
     def search_space(self):
-        return product(param.get_all_values() for param in self.params)
+        return product(*[param.get_all_values() for param in self.params])
 
     def fit(self, X_validation, validation_labels, gold_candidate_set=None,
         b=0.5, set_unlabeled_as_neg=True, validation_kwargs={},
@@ -435,10 +437,11 @@ class GridSearch(object):
         """
         # Iterate over the param values
         run_stats       = []
-        f1_opt          = -1.0
+        sort_score_opt  = -1.0
         base_model_name = self.model.name
         model_k         = 0
         for k, param_vals in enumerate(self.search_space()):
+            #tf.reset_default_graph()
             model_name = '{0}_{1}'.format(base_model_name, model_k)
             model_k += 1
             # Set the new hyperparam configuration to test
@@ -452,26 +455,45 @@ class GridSearch(object):
             print("=" * 60)
             # Train the model
             self.model.train(
-                self.X, self.training_marginals, **model_hyperparams
+                self.X,
+                self.training_marginals, 
+                reuse=(k > 0),
+                **model_hyperparams
             )
-            # Test the model
-            tp, fp, tn, fn = self.model.score(
+            # Test the model; handle both binary and categorical scoring
+            error_buckets = self.model.score(
                 self.session, X_validation, validation_labels,
                 gold_candidate_set, b, set_unlabeled_as_neg, False, self.scorer,
                 **validation_kwargs
             )
-            p, r, f1 = scores_from_counts(tp, fp, tn, fn)
-            run_stats.append(list(param_vals) + [p, r, f1])
-            if f1 > f1_opt:
+            try:
+                tp, fp, tn, fn = error_buckets
+                p, r, f1 = scores_from_counts(tp, fp, tn, fn)
+                run_stats.append(list(param_vals) + [p, r, f1])
+                sort_score = f1
+                print "[{0}] F1 Score: {1}".format(self.model.name, f1)
+            except:
+                correct, incorrect = error_buckets
+                acc = float(len(correct)) / (len(correct) + len(incorrect))
+                run_stats.append(list(param_vals) + [acc])
+                sort_score = acc
+                print "[{0}] Accuracy: {1}".format(self.model.name, acc)
+            if sort_score > sort_score_opt:
                 self.model.save(model_name)
                 opt_model = model_name
-                f1_opt    = f1
+                sort_score_opt = sort_score
         # Set optimal parameter in the learner model
+        #tf.reset_default_graph()
         self.model.load(opt_model)
         # Return DataFrame of scores
-        self.results = DataFrame.from_records(
-            run_stats, columns=self.param_names + ['Prec.', 'Rec.', 'F1']
-        ).sort_values(by='F1', ascending=False)
+        if len(self.param_names) == len(run_stats[0]) - 1:
+            self.results = DataFrame.from_records(
+                run_stats, columns=self.param_names + ['Acc.']
+            ).sort_values(by='Acc.', ascending=False)
+        else:
+            self.results = DataFrame.from_records(
+                run_stats, columns=self.param_names + ['Prec.', 'Rec.', 'F1']
+            ).sort_values(by='F1', ascending=False)
         return self.results
     
     

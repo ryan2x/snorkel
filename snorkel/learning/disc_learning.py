@@ -79,6 +79,8 @@ class TFNoiseAwareModel(NoiseAwareModel):
         # Load model
         if save_file is not None:
             self.load(save_file)
+        # Build model once on initialization of model
+        # self._build()
 
     def _build(self, **kwargs):
         """Builds the TensorFlow model
@@ -99,7 +101,8 @@ class TFNoiseAwareModel(NoiseAwareModel):
         """
         model_name = model_name or self.name
         self.save_info(model_name)
-        save_dict = self.save_dict or tf.global_variables()
+        save_dict = self.save_dict or tf.trainable_variables()
+        print [v.name for v in save_dict]
         saver = tf.train.Saver(save_dict)
         saver.save(self.session, './' + model_name, global_step=0)
         if verbose:
@@ -113,8 +116,9 @@ class TFNoiseAwareModel(NoiseAwareModel):
             @verbose: be talkative?
         """
         self.load_info(model_name)
-        self._build()
-        load_dict = self.save_dict or tf.global_variables()
+        # self._build()
+        load_dict = self.save_dict or tf.trainable_variables()
+        print [v.name for v in load_dict]
         saver = tf.train.Saver(load_dict)
         ckpt = tf.train.get_checkpoint_state('./')
         if ckpt and ckpt.model_checkpoint_path:

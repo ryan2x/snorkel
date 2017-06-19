@@ -80,14 +80,14 @@ class RNNBase(TFNoiseAwareModel):
         s = self.seed
         s1, s2, s3, s4 = [None] * 4 if s is None else [s+i for i in range(4)]
         # Embedding layer
-        emb_var   = tf.Variable(self._embedding_init(s1))
+        emb_var   = tf.Variable(self._embedding_init(s1), name='embedding')
         embedding = tf.concat([tf.zeros([1, self.dim]), emb_var], axis=0)
         inputs    = tf.nn.embedding_lookup(embedding, self.sentences)
         # Build RNN graph
         batch_size = tf.shape(self.sentences)[0]
-        rand_name  = "RNN_{0}".format(random.randint(0, 1e12)) # Obscene hack
+        # rand_name  = "RNN_{0}".format(random.randint(0, 1e12)) # Obscene hack
         init = tf.contrib.layers.xavier_initializer(seed=s2)
-        with tf.variable_scope(rand_name, reuse=False, initializer=init):
+        with tf.variable_scope('RNN_cell', reuse=False, initializer=init):
             # Build RNN cells
             fw_cell = self.cell(self.dim)
             bw_cell = self.cell(self.dim)
@@ -121,11 +121,12 @@ class RNNBase(TFNoiseAwareModel):
 
         # Backprop trainer
         self.train_fn = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
+        # self.train_fn = tf.train.GradientDescentOptimizer(self.lr).minimize(self.loss)
 
     def _build_sigmoid(self, potentials, seed):
         self.train_marginals = tf.placeholder(tf.float32, [None])
-        W = tf.Variable(tf.random_normal((2*self.dim, 1), stddev=SD, seed=seed))
-        b = tf.Variable(0., dtype=tf.float32)
+        W = tf.Variable(tf.random_normal((2*self.dim, 1), stddev=SD, seed=seed), name='W')
+        b = tf.Variable(0., dtype=tf.float32, name='b')
         h_dropout = tf.squeeze(tf.matmul(potentials, W)) + b
         # Noise-aware loss
         self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
@@ -137,8 +138,8 @@ class RNNBase(TFNoiseAwareModel):
     def _build_softmax(self, potentials, seed):
         self.train_marginals = tf.placeholder(tf.float32, [None, self.k])
         W = tf.Variable(tf.random_normal((2*self.dim, self.k), stddev=SD, 
-            seed=seed))
-        b = tf.Variable(np.zeros(self.k), dtype=tf.float32)
+            seed=seed), name='W')
+        b = tf.Variable(np.zeros(self.k), dtype=tf.float32, name='b')
         h_dropout = tf.matmul(potentials, W) + b
         # Noise-aware loss
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
@@ -150,7 +151,7 @@ class RNNBase(TFNoiseAwareModel):
     def train(self, candidates, marginals, n_epochs=25, lr=0.01, dropout=0.5,
         dim=50, attn_window=None, cell_type=rnn.BasicLSTMCell, batch_size=256,
         max_sentence_length=None, rebalance=False, dev_candidates=None,
-        dev_labels=None, print_freq=5):
+        dev_labels=None, print_freq=5, reuse=False):
         """Train bidirectional RNN model for binary classification
             @candidates: list of Candidate objects for training
             @marginals: array of marginal probabilities for each Candidate
@@ -197,7 +198,8 @@ class RNNBase(TFNoiseAwareModel):
         self.n_v  = self.word_dict.len()
         self.attn = attn_window
         self.cell = cell_type
-        self._build()
+        with tf.variable_scope('RNN', reuse=reuse):
+            self._build()
         # Get dev data
         dev_data, dev_gold = None, None
         if dev_candidates is not None and dev_labels is not None:
