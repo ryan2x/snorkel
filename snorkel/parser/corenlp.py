@@ -7,6 +7,14 @@ import socket
 import string
 import warnings
 
+import datetime
+import urllib
+from collections import OrderedDict
+
+
+import ConfigParser
+
+
 from subprocess import Popen,PIPE
 from collections import defaultdict
 
@@ -50,8 +58,8 @@ class StanfordCoreNLPServer(Parser):
     BLOCK_DEFS = {"3.6.0":"basic-dependencies", "3.7.0":"basicDependencies"}
 
     def __init__(self, annotators=['tokenize', 'ssplit', 'pos', 'lemma', 'depparse', 'ner'],
-                 annotator_opts={}, tokenize_whitespace=False, split_newline=False, encoding="utf-8",
-                 java_xmx='4g', port=12345, num_threads=1, verbose=False, version='3.6.0'):
+                 annotator_opts={}, tokenize_whitespace=False, split_newline=False, language="en", encoding="utf-8",
+                 java_xmx='4g', port=12345, num_threads=1, verbose=False, version='3.7.0'):
         '''
         Create CoreNLP server instance.
         :param annotators:
@@ -79,10 +87,14 @@ class StanfordCoreNLPServer(Parser):
         self.version = version
 
         # configure connection request options
-        opts = self._conn_opts(annotators, annotator_opts, tokenize_whitespace, split_newline)
-        self.endpoint = 'http://127.0.0.1:%d/?%s' % (self.port, opts)
+        opts = self._conn_opts(annotators, annotator_opts, tokenize_whitespace, split_newline, language)
+        url1 = 'http://127.0.0.1:%d' % (self.port)
+        url = os.environ.get("CORENLP_SERVER", url1)
+        print(url)
+        self.endpoint = '%s/?%s' % (url, opts)
 
-        self._start_server()
+        self.process_group = None
+        # self._start_server()
 
         if self.verbose:
             self.summary()
@@ -107,7 +119,7 @@ class StanfordCoreNLPServer(Parser):
             text = "This forces the server to preload all models."
             parts = list(conn.parse(None, text))
 
-    def _conn_opts(self, annotators, annotator_opts, tokenize_whitespace, split_newline):
+    def _conn_opts(self, annotators, annotator_opts, tokenize_whitespace, split_newline, language):
         '''
         Server connection properties
 
@@ -126,8 +138,13 @@ class StanfordCoreNLPServer(Parser):
             props += ['"ssplit.eolonly": "true"']
         if ssplit_opts and 'newlineIsSentenceBreak' in ssplit_opts:
             props += ['"ssplit.newlineIsSentenceBreak": "{}"'.format(ssplit_opts['newlineIsSentenceBreak'])]
+        props += ['"timeout": "600000"']
+        # props += [ json.dumps({'ssplit.boundaryTokenRegex': u'[.]|[!?]+|[。]|[！？]+'.encode("utf-8")}, ensure_ascii=False) ]
         props = ",".join(props)
-        return 'properties={%s}' % (props)
+        result = 'properties={%s}' % (props)
+        if language:
+            result += "&pipelineLanguage={}".format(language)
+        return result
 
     def _get_props(self, annotators, annotator_opts):
         '''
@@ -144,11 +161,13 @@ class StanfordCoreNLPServer(Parser):
             props = ["{}={}".format(key, str(value).lower()) for key, value in annotator_opts[name].items()]
             opts.append('"{}.options":"{}"'.format(name, ",".join(props)))
 
-        props = []
-        props += ['"annotators": {}'.format('"{}"'.format(",".join(annotators)))]
-        props += ['"outputFormat": "json"']
-        props += [",".join(opts)] if opts else []
-        return ",".join(props)
+        props = OrderedDict(annotators=",".join(annotators))
+        _read_props(props)
+        # props += ['"annotators": {}'.format('"{}"'.format(",".join(annotators)))]
+        # props += ['"outputFormat": "json"']
+        # props += [",".join(opts)] if opts else []
+        # return ",".join(props)
+        return json.dumps(props)
 
     def __del__(self):
         '''
@@ -226,6 +245,35 @@ class StanfordCoreNLPServer(Parser):
             warnings.warn("CoreNLP skipped a malformed document.", RuntimeWarning)
 
         position = 0
+        originalText = text.decode(self.encoding)
+
+        # certain configuration options remove 'before'/'after' fields in output JSON (TODO: WHY?)
+        # In order to create the 'text' field with correct character offsets we use
+        # 'characterOffsetEnd' and 'characterOffsetBegin' to build our string from token input
+
+        def _combine_func1(block):
+            text = ""
+            for t in block['tokens']:
+                # shift to start of local sentence offset
+                i = t['characterOffsetBegin'] - block['tokens'][0]['characterOffsetBegin']
+                # add whitespace based on offsets of originalText
+                text += (' ' * (i - len(text))) + t['originalText'] if len(text) != i else t['originalText']
+            return text
+        # this is Ryan Xu's fix to this problem. note the decode('utf-8' is necessary
+        def _combine_func2(block):
+            text = ""
+            prevEnd = None
+            for t in block['tokens']:
+                beginIdx = t['characterOffsetBegin']
+                endIdx = t['characterOffsetEnd']
+                tokenText = originalText[beginIdx:endIdx]
+                if prevEnd is not None and beginIdx>prevEnd:
+                    # add whitespace based on offsets of originalText
+                    text += ' '*(beginIdx-prevEnd)
+                text += tokenText
+                prevEnd = endIdx
+            return text
+        #
         for block in blocks:
             parts = defaultdict(list)
             dep_order, dep_par, dep_lab = [], [], []
@@ -240,16 +288,7 @@ class StanfordCoreNLPServer(Parser):
                 dep_lab.append(deps['dep'])
                 dep_order.append(deps['dependent'])
 
-            # certain configuration options remove 'before'/'after' fields in output JSON (TODO: WHY?)
-            # In order to create the 'text' field with correct character offsets we use
-            # 'characterOffsetEnd' and 'characterOffsetBegin' to build our string from token input
-            text = ""
-            for t in block['tokens']:
-                # shift to start of local sentence offset
-                i = t['characterOffsetBegin'] - block['tokens'][0]['characterOffsetBegin']
-                # add whitespace based on offsets of originalText
-                text += (' ' * (i - len(text))) + t['originalText'] if len(text) != i else t['originalText']
-            parts['text'] = text
+            parts['text'] = _combine_func2(block)
 
             # make char_offsets relative to start of sentence
             abs_sent_offset = parts['char_offsets'][0]
@@ -296,3 +335,27 @@ class StanfordCoreNLPServer(Parser):
             raise ValueError("File too long. Max character count is 100K.")
         if content.startswith("CoreNLP request timed out"):
             raise ValueError("CoreNLP request timed out on file.")
+
+
+class FakeSecHead(object):
+    def __init__(self, fp):
+        self.fp = fp
+        self.sechead = '[asection]\n'
+
+    def readline(self):
+        if self.sechead:
+            try:
+                return self.sechead
+            finally:
+                self.sechead = None
+        else:
+            return self.fp.readline()
+
+def _read_props(props):
+    filename = "StanfordCoreNLP-chinese.properties"
+    fullpath = os.path.join(os.path.dirname(__file__), filename)
+    cp = ConfigParser.SafeConfigParser()
+    cp.optionxform = str
+    cp.readfp(FakeSecHead(open(fullpath, "rb")))
+    for k,v in cp.items('asection'):
+        props[k] = v.encode("utf-8")
