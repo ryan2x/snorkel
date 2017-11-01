@@ -5,7 +5,7 @@ import scipy.sparse as sparse
 
 
 class ProgressBar(object):
-    def __init__(self, N, length=40):
+    def __init__(self, N, length=40, callback=None):
         # Protect against division by zero (N = 0 results in full bar being printed)
         self.N      = max(1, N)
         self.nf     = float(self.N)
@@ -13,10 +13,14 @@ class ProgressBar(object):
         # Precalculate the i values that should trigger a write operation
         self.ticks = set([round(i/100.0 * N) for i in range(101)])
         self.ticks.add(N-1)
+        self.callback = callback
         self.bar(0)
 
     def bar(self, i):
         """Assumes i ranges through [0, N-1]"""
+        if self.callback:
+            self.callback("progress %d/%d" % (i, self.N))
+            return
         if i in self.ticks:
             b = int(np.ceil(((i+1) / self.nf) * self.length))
             sys.stdout.write(

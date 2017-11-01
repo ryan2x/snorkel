@@ -52,10 +52,11 @@ class UDFRunner(object):
         udf = self.udf_class(**self.udf_init_kwargs)
 
         # Set up ProgressBar if possible
+        progress_callback = kwargs.get("progress_callback")
         pb = None
         if progress_bar and hasattr(xs, '__len__') or count is not None:
             n = count if count is not None else len(xs)
-            pb = ProgressBar(n)
+            pb = ProgressBar(n, callback=progress_callback)
         
         # Run single-thread
         for i, x in enumerate(xs):
