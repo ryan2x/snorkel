@@ -3,7 +3,7 @@ from functools import partial
 from models.candidate import wrap_candidate
 from snorkel.annotations import load_label_matrix
 from snorkel.models.annotation import Label, LabelKey
-from snorkel.models.meta import snorkel_conn_string
+from snorkel.models.meta import build_snorkel_connection_string
 from snorkel.models.views import create_serialized_candidate_view
 
 
@@ -93,7 +93,7 @@ class SparkLabelAnnotator:
         """
         jdbcDF = self.spark_session.read \
             .format("jdbc") \
-            .option("url", "jdbc:" + snorkel_conn_string) \
+            .option("url", "jdbc:" + build_snorkel_connection_string()) \
             .option("dbtable", 
                 self.candidate_class.__tablename__ + "_serialized") \
             .load()

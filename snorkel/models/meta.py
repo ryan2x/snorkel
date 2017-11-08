@@ -4,19 +4,23 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+
 # Sets connection string
-snorkel_conn_string = os.environ['SNORKELDB'] if 'SNORKELDB' in os.environ and os.environ['SNORKELDB'] != '' \
-    else 'sqlite:///' + os.getcwd() + os.sep + 'snorkel.db'
+def build_snorkel_connection_string():
+    snorkel_conn_string = os.environ['SNORKELDB'] if 'SNORKELDB' in os.environ and os.environ['SNORKELDB'] != '' \
+        else 'sqlite:///' + os.getcwd() + os.sep + 'snorkel.db'
+    return snorkel_conn_string
 
 
 # Sets global variable indicating whether we are using Postgres
-snorkel_postgres = snorkel_conn_string.startswith('postgres')
+def check_snorkel_postgres():
+    return build_snorkel_connection_string().startswith('postgres')
 
 
 # Automatically turns on foreign key enforcement for SQLite
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
-    if snorkel_conn_string.startswith('sqlite'):
+    if build_snorkel_connection_string().startswith('sqlite'):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
@@ -28,7 +32,8 @@ def new_sessionmaker():
     # Turning on autocommit for Postgres, see http://oddbird.net/2014/06/14/sqlalchemy-postgres-autocommit/
     # Otherwise any e.g. query starts a transaction, locking tables... very bad for e.g. multiple notebooks
     # open, multiple processes, etc.
-    if snorkel_postgres:
+    snorkel_conn_string = build_snorkel_connection_string()
+    if check_snorkel_postgres():
         snorkel_engine = create_engine(snorkel_conn_string, isolation_level="AUTOCOMMIT")
     else:
         snorkel_engine = create_engine(snorkel_conn_string)

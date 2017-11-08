@@ -176,12 +176,13 @@ class Ngrams(CandidateSpace):
 class PretaggedCandidateExtractor(UDFRunner):
     """UDFRunner for PretaggedCandidateExtractorUDF"""
     def __init__(self, candidate_class, entity_types, self_relations=False,
-     nested_relations=False, symmetric_relations=True, entity_sep='~@~'):
+     nested_relations=False, symmetric_relations=True, entity_sep='~@~', session=None):
         super(PretaggedCandidateExtractor, self).__init__(
             PretaggedCandidateExtractorUDF, candidate_class=candidate_class,
             entity_types=entity_types, self_relations=self_relations,
             nested_relations=nested_relations, entity_sep=entity_sep,
             symmetric_relations=symmetric_relations,
+            session=session
         )
 
     def apply(self, xs, split=0, **kwargs):

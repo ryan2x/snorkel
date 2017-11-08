@@ -5,11 +5,12 @@ from ..udf import UDF, UDFRunner
 
 class CorpusParser(UDFRunner):
 
-    def __init__(self, parser=None, fn=None):
+    def __init__(self, parser=None, fn=None, session=None):
         self.parser = parser or StanfordCoreNLPServer()
         super(CorpusParser, self).__init__(CorpusParserUDF,
                                            parser=self.parser,
-                                           fn=fn)
+                                           fn=fn, session=session)
+
     def clear(self, session, **kwargs):
         session.query(Context).delete()
         # We cannot cascade up from child contexts to parent Candidates,

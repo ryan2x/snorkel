@@ -4,8 +4,9 @@ try:
 except:
     from Queue import Empty
 
-from .models.meta import new_sessionmaker, snorkel_conn_string
+from .models.meta import new_sessionmaker, build_snorkel_connection_string
 from .utils import ProgressBar
+import os
 
 
 QUEUE_TIMEOUT = 3
@@ -31,15 +32,22 @@ class UDFRunner(object):
         # Clear everything downstream of this UDF if requested
         if clear:
             print("Clearing existing...")
-            SnorkelSession = new_sessionmaker()
-            session = SnorkelSession()
+            print("SNORKELDB=%s" % os.environ.get('SNORKELDB'))
+            session = kwargs.pop("session", None)
+            flag_close_session = True
+            if not session:
+                SnorkelSession = new_sessionmaker()
+                session = SnorkelSession()
+                flag_close_session = False
+                # raise ValueError("pass session please")
             self.clear(session, **kwargs)
-            session.commit()
-            session.close()
+            if flag_close_session:
+                session.commit()
+                session.close()
 
         # Execute the UDF
         print("Running UDF...")
-        if parallelism is None or parallelism < 2:
+        if not parallelism or parallelism < 2:
             self.apply_st(xs, progress_bar, clear=clear, count=count, **kwargs)
         else:
             self.apply_mt(xs, parallelism, clear=clear, **kwargs)
@@ -79,7 +87,7 @@ class UDFRunner(object):
         
     def apply_mt(self, xs, parallelism, **kwargs):
         """Run the UDF multi-threaded using python multiprocessing"""
-        if snorkel_conn_string.startswith('sqlite'):
+        if build_snorkel_connection_string().startswith('sqlite'):
             raise ValueError('Multiprocessing with SQLite is not supported. Please use a different database backend,'
                              ' such as PostgreSQL.')
 
@@ -128,7 +136,7 @@ class UDFRunner(object):
 
 
 class UDF(Process):
-    def __init__(self, in_queue=None, out_queue=None):
+    def __init__(self, in_queue=None, out_queue=None, session=None):
         """
         in_queue: A Queue of input objects to process; primarily for running in parallel
         """
@@ -139,8 +147,15 @@ class UDF(Process):
 
         # Each UDF starts its own Engine
         # See http://docs.sqlalchemy.org/en/latest/core/pooling.html#using-connection-pools-with-multiprocessing
-        SnorkelSession = new_sessionmaker()
-        self.session   = SnorkelSession()
+        if session:
+            self.session = session
+            self.flag_close_session = False
+        else:
+            SnorkelSession = new_sessionmaker()
+            self.session   = SnorkelSession()
+            self.flag_close_session = True
+            print("SNORKELDB=%s" % os.environ.get('SNORKELDB'))
+            print("UDF snorkel_conn_string=%s" % build_snorkel_connection_string())
 
         # We use a workaround to pass in the apply kwargs
         self.apply_kwargs = {}
@@ -163,8 +178,10 @@ class UDF(Process):
                 self.in_queue.task_done()
             except Empty:
                 break
-        self.session.commit()
-        self.session.close()
+
+        if self.flag_close_session:
+            self.session.commit()
+            self.session.close()
 
     def apply(self, x, **kwargs):
         """This function takes in an object, and returns a generator / set / list"""

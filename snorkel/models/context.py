@@ -1,4 +1,4 @@
-from .meta import SnorkelBase, snorkel_postgres
+from .meta import SnorkelBase, check_snorkel_postgres
 from sqlalchemy import Column, String, Integer, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import relationship, backref
@@ -65,7 +65,7 @@ class Sentence(Context):
     position = Column(Integer, nullable=False)
     document = relationship('Document', backref=backref('sentences', order_by=position, cascade='all, delete-orphan'), foreign_keys=document_id)
     text = Column(Text, nullable=False)
-    if snorkel_postgres:
+    if check_snorkel_postgres():
         words             = Column(postgresql.ARRAY(String), nullable=False)
         char_offsets      = Column(postgresql.ARRAY(Integer), nullable=False)
         abs_char_offsets  = Column(postgresql.ARRAY(Integer), nullable=False)
