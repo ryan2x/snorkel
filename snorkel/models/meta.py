@@ -49,3 +49,14 @@ SnorkelSession = new_sessionmaker()
 snorkel_engine = SnorkelSession.kw['bind']
 
 SnorkelBase = declarative_base(name='SnorkelBase', cls=object)
+
+
+def build_snorkel_session():
+    global SnorkelSession
+    global snorkel_engine
+    global SnorkelBase
+    SnorkelSession = new_sessionmaker()
+    snorkel_engine = SnorkelSession.kw['bind']
+    SnorkelBase = declarative_base(name='SnorkelBase', cls=object)
+    #
+    SnorkelBase.metadata.create_all(snorkel_engine)

@@ -1,7 +1,6 @@
 import os
 import math
-import matplotlib
-import matplotlib.pyplot as plt
+
 import numpy as np
 import scipy.sparse as sparse
 import warnings
@@ -303,6 +302,9 @@ def print_scores(ntp, nfp, ntn, nfn, title='Scores'):
 ############################################################
 
 def plot_prediction_probability(probs):
+    import matplotlib
+    import matplotlib.pyplot as plt
+
     plt.hist(probs, bins=20, normed=False, facecolor='blue')
     plt.xlim((0,1.025))
     plt.xlabel("Probability")
@@ -310,6 +312,9 @@ def plot_prediction_probability(probs):
 
 
 def plot_accuracy(probs, ground_truth):
+    import matplotlib
+    import matplotlib.pyplot as plt
+
     x = 0.1 * np.array(range(11))
     bin_assign = [x[i] for i in np.digitize(probs, x)-1]
     correct = ((2*(probs >= 0.5) - 1) == ground_truth)
@@ -325,6 +330,9 @@ def plot_accuracy(probs, ground_truth):
 
 def calibration_plots(train_marginals, test_marginals, gold_labels=None):
     """Show classification accuracy and probability histogram plots"""
+    import matplotlib
+    import matplotlib.pyplot as plt
+
     n_plots = 3 if gold_labels is not None else 1
 
     # Whole set histogram
